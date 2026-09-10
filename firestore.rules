@@ -1,0 +1,670 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function autenticado() {
+      return request.auth != null;
+    }
+
+    function esEdil() {
+      return autenticado()
+        && exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && get(/databases/$(database)/documents/users/$(request.auth.uid)).data.rol == 'edil';
+    }
+
+    function finalizacionNoSolicitada() {
+      return (
+          !resource.data.keys().hasAny(['finalizacion_solicitada'])
+          || resource.data.finalizacion_solicitada == false
+          || resource.data.finalizacion_solicitada == null
+        )
+        && (
+          !resource.data.keys().hasAny(['finalizacion_estado'])
+          || resource.data.finalizacion_estado == null
+        );
+    }
+
+    function puedeSolicitarFinalizacion() {
+      return autenticado()
+        && resource.data.uid_estudiante == request.auth.uid
+        && resource.data.estado == 'Expedida'
+        && finalizacionNoSolicitada()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'finalizacion_solicitada',
+          'finalizacion_estado',
+          'fecha_solicitud_finalizacion'
+        ])
+        && request.resource.data.finalizacion_solicitada == true
+        && request.resource.data.finalizacion_estado == 'Pendiente'
+        && request.resource.data.fecha_solicitud_finalizacion == request.time;
+    }
+
+    function camposSolicitudInicial() {
+      return [
+        'uid_estudiante',
+        'nombre_completo',
+        'tipo_documento',
+        'numero_documento',
+        'ciudad_documento',
+        'universidad',
+        'carrera',
+        'semestre_actual',
+        'horas_a_realizar',
+        'lugar_realizacion',
+        'estado',
+        'fecha_solicitud',
+        'fecha_resolucion',
+        'sugerencia_correccion',
+        'fecha_sugerencia_correccion',
+        'uid_edil_revision',
+        'documento_expedido_id',
+        'documento_expedido_url',
+        'finalizacion_solicitada',
+        'finalizacion_estado',
+        'fecha_solicitud_finalizacion',
+        'fecha_expedicion_finalizacion',
+        'finalizacion_sugerencia_correccion',
+        'fecha_sugerencia_finalizacion',
+        'uid_edil_revision_finalizacion',
+        'documento_finalizacion_id',
+        'documento_finalizacion_url'
+      ];
+    }
+
+    function camposSolicitudInicialRequeridos() {
+      return [
+        'uid_estudiante',
+        'nombre_completo',
+        'tipo_documento',
+        'numero_documento',
+        'ciudad_documento',
+        'universidad',
+        'carrera',
+        'semestre_actual',
+        'horas_a_realizar',
+        'lugar_realizacion',
+        'estado',
+        'fecha_solicitud',
+        'fecha_resolucion',
+        'documento_expedido_id',
+        'documento_expedido_url',
+        'finalizacion_solicitada',
+        'finalizacion_estado',
+        'fecha_solicitud_finalizacion',
+        'fecha_expedicion_finalizacion',
+        'documento_finalizacion_id',
+        'documento_finalizacion_url'
+      ];
+    }
+
+    function stringNoVacio(valor, max) {
+      return valor is string
+        && valor.size() > 0
+        && valor.size() <= max;
+    }
+
+    function stringOpcional(data, campo, max) {
+      let valor = data.get(campo, null);
+      return valor == null
+        || (valor is string && valor.size() <= max);
+    }
+
+    function timestampOpcional(data, campo) {
+      let valor = data.get(campo, null);
+      return valor == null || valor is timestamp;
+    }
+
+    function timestampActualSiCambia(campo) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny([campo])
+        || request.resource.data.get(campo, null) == request.time;
+    }
+
+    function camposCrearNoticia() {
+      return [
+        'titulo',
+        'cuerpo',
+        'fechaPublicacion',
+        'autorId',
+        'media_drive_id',
+        'media_tipo',
+        'media_url',
+        'media_embed_url',
+        'media_view_url',
+        'media_mime',
+        'media_nombre',
+        'media_folder_id'
+      ];
+    }
+
+    function camposNoticia() {
+      return [
+        'titulo',
+        'cuerpo',
+        'fechaPublicacion',
+        'autorId',
+        'media_drive_id',
+        'media_tipo',
+        'media_url',
+        'media_embed_url',
+        'media_view_url',
+        'media_mime',
+        'media_nombre',
+        'media_folder_id',
+        'fechaActualizacion',
+        'portadaUrl'
+      ];
+    }
+
+    function camposEditablesNoticia() {
+      return [
+        'titulo',
+        'cuerpo',
+        'fechaActualizacion',
+        'media_drive_id',
+        'media_tipo',
+        'media_url',
+        'media_embed_url',
+        'media_view_url',
+        'media_mime',
+        'media_nombre',
+        'media_folder_id'
+      ];
+    }
+
+    function textoNoticiaValido(data) {
+      return stringNoVacio(data.titulo, 200)
+        && stringNoVacio(data.cuerpo, 12000);
+    }
+
+    function mediaNoticiaVacia(data) {
+      return data.media_drive_id == null
+        && data.media_tipo == null
+        && data.media_url == null
+        && data.media_embed_url == null
+        && data.media_view_url == null
+        && data.media_mime == null
+        && data.media_nombre == null
+        && data.media_folder_id == null;
+    }
+
+    function mediaNoticiaActualValida(data) {
+      return (data.media_tipo == 'imagen' || data.media_tipo == 'video')
+        && stringNoVacio(data.media_drive_id, 256)
+        && stringNoVacio(data.media_url, 1200)
+        && stringNoVacio(data.media_embed_url, 1200)
+        && stringOpcional(data, 'media_view_url', 1200)
+        && stringNoVacio(data.media_mime, 160)
+        && stringNoVacio(data.media_nombre, 220)
+        && stringNoVacio(data.media_folder_id, 256);
+    }
+
+    function mediaNoticiaValida(data) {
+      return (
+          data.keys().hasAll([
+            'media_drive_id',
+            'media_tipo',
+            'media_url',
+            'media_embed_url',
+            'media_view_url',
+            'media_mime',
+            'media_nombre',
+            'media_folder_id'
+          ])
+          && (mediaNoticiaVacia(data) || mediaNoticiaActualValida(data))
+        )
+        || (
+          !data.keys().hasAny(['media_tipo'])
+          && stringOpcional(data, 'portadaUrl', 1200)
+        );
+    }
+
+    function noticiaValida(data) {
+      return data.keys().hasOnly(camposNoticia())
+        && textoNoticiaValido(data)
+        && data.autorId is string
+        && data.fechaPublicacion is timestamp
+        && mediaNoticiaValida(data)
+        && stringOpcional(data, 'portadaUrl', 1200);
+    }
+
+    function camposCrearEvento() {
+      return [
+        'titulo',
+        'descripcion',
+        'fecha',
+        'fecha_fin',
+        'lugar',
+        'autorId',
+        'creadoEn'
+      ];
+    }
+
+    function camposEvento() {
+      return [
+        'titulo',
+        'descripcion',
+        'fecha',
+        'fecha_fin',
+        'lugar',
+        'autorId',
+        'creadoEn',
+        'actualizadoEn'
+      ];
+    }
+
+    function camposEditablesEvento() {
+      return [
+        'titulo',
+        'descripcion',
+        'fecha',
+        'fecha_fin',
+        'lugar',
+        'actualizadoEn'
+      ];
+    }
+
+    function eventoValido(data) {
+      return data.keys().hasOnly(camposEvento())
+        && stringNoVacio(data.titulo, 160)
+        && stringNoVacio(data.descripcion, 4000)
+        && stringNoVacio(data.lugar, 240)
+        && data.autorId is string
+        && data.fecha is timestamp
+        && data.fecha_fin is timestamp
+        && data.fecha_fin > data.fecha;
+    }
+
+    function camposUsuario() {
+      return [
+        'uid',
+        'email',
+        'nombre',
+        'primer_apellido',
+        'segundo_apellido',
+        'tipo_documento',
+        'numero_documento',
+        'ciudad_documento',
+        'rol',
+        'creadoEn',
+        'creadoPor',
+        'actualizadoEn',
+        'actualizadoPor'
+      ];
+    }
+
+    function camposBaseUsuario() {
+      return [
+        'uid',
+        'email',
+        'nombre',
+        'primer_apellido',
+        'segundo_apellido',
+        'tipo_documento',
+        'numero_documento',
+        'ciudad_documento',
+        'rol'
+      ];
+    }
+
+    function tipoDocumentoValido(tipo) {
+      return tipo == 'CC'
+        || tipo == 'CE'
+        || tipo == 'PPT'
+        || tipo == 'PA';
+    }
+
+    function rolUsuarioValido(rol) {
+      return rol == 'estudiante' || rol == 'edil';
+    }
+
+    function camposSolicitudAcceso() {
+      return [
+        'email',
+        'nombre',
+        'primer_apellido',
+        'segundo_apellido',
+        'tipo_documento',
+        'numero_documento',
+        'ciudad_documento',
+        'rol',
+        'estado',
+        'fecha_solicitud',
+        'fecha_respuesta',
+        'uid_edil_respuesta',
+        'uid_usuario_creado'
+      ];
+    }
+
+    function solicitudAccesoDatosValidos(data) {
+      return data.keys().hasOnly(camposSolicitudAcceso())
+        && data.keys().hasAll(camposSolicitudAcceso())
+        && stringNoVacio(data.email, 180)
+        && stringNoVacio(data.nombre, 80)
+        && stringNoVacio(data.primer_apellido, 80)
+        && stringNoVacio(data.segundo_apellido, 80)
+        && tipoDocumentoValido(data.tipo_documento)
+        && stringNoVacio(data.numero_documento, 30)
+        && data.numero_documento.size() >= 6
+        && stringNoVacio(data.ciudad_documento, 80)
+        && data.rol == 'estudiante';
+    }
+
+    function solicitudAccesoCreacionValida(data) {
+      return solicitudAccesoDatosValidos(data)
+        && data.estado == 'Pendiente'
+        && data.fecha_solicitud == request.time
+        && data.fecha_respuesta == null
+        && data.uid_edil_respuesta == null
+        && data.uid_usuario_creado == null;
+    }
+
+    function solicitudAccesoBaseNoCambia() {
+      return request.resource.data.email == resource.data.email
+        && request.resource.data.nombre == resource.data.nombre
+        && request.resource.data.primer_apellido == resource.data.primer_apellido
+        && request.resource.data.segundo_apellido == resource.data.segundo_apellido
+        && request.resource.data.tipo_documento == resource.data.tipo_documento
+        && request.resource.data.numero_documento == resource.data.numero_documento
+        && request.resource.data.ciudad_documento == resource.data.ciudad_documento
+        && request.resource.data.rol == resource.data.rol
+        && request.resource.data.fecha_solicitud == resource.data.fecha_solicitud;
+    }
+
+    function solicitudAccesoResolucionValida() {
+      return esEdil()
+        && solicitudAccesoDatosValidos(request.resource.data)
+        && resource.data.estado == 'Pendiente'
+        && solicitudAccesoBaseNoCambia()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+          'estado',
+          'fecha_respuesta',
+          'uid_edil_respuesta',
+          'uid_usuario_creado'
+        ])
+        && (request.resource.data.estado == 'Aprobada'
+          || request.resource.data.estado == 'Rechazada')
+        && request.resource.data.fecha_respuesta == request.time
+        && request.resource.data.uid_edil_respuesta == request.auth.uid
+        && (
+          (request.resource.data.estado == 'Aprobada'
+            && stringNoVacio(request.resource.data.uid_usuario_creado, 128))
+          || (request.resource.data.estado == 'Rechazada'
+            && request.resource.data.uid_usuario_creado == null)
+        );
+    }
+
+    function perfilSolicitante() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+
+    function nombreCompletoPerfil(perfil) {
+      return perfil.nombre + ' ' + perfil.primer_apellido + ' ' + perfil.segundo_apellido;
+    }
+
+    function identidadSolicitudCoincideConPerfil(data) {
+      return exists(/databases/$(database)/documents/users/$(request.auth.uid))
+        && perfilSolicitante().uid == request.auth.uid
+        && perfilSolicitante().rol == 'estudiante'
+        && data.nombre_completo == nombreCompletoPerfil(perfilSolicitante())
+        && data.tipo_documento == perfilSolicitante().tipo_documento
+        && data.numero_documento == perfilSolicitante().numero_documento
+        && data.ciudad_documento == perfilSolicitante().ciudad_documento;
+    }
+
+    function camposEditablesSolicitudEdil() {
+      return [
+        'estado',
+        'fecha_resolucion',
+        'sugerencia_correccion',
+        'fecha_sugerencia_correccion',
+        'uid_edil_revision',
+        'documento_expedido_id',
+        'documento_expedido_url',
+        'finalizacion_solicitada',
+        'finalizacion_estado',
+        'fecha_expedicion_finalizacion',
+        'finalizacion_sugerencia_correccion',
+        'fecha_sugerencia_finalizacion',
+        'uid_edil_revision_finalizacion',
+        'documento_finalizacion_id',
+        'documento_finalizacion_url'
+      ];
+    }
+
+    function estadoTramiteValido(estado) {
+      return estado == 'Pendiente'
+        || estado == 'Aprobado'
+        || estado == 'Rechazado'
+        || estado == 'Expedida';
+    }
+
+    function estadoFinalizacionValido(data) {
+      let estado = data.get('finalizacion_estado', null);
+      return estado == null
+        || estado == 'Pendiente'
+        || estado == 'Rechazada'
+        || estado == 'Expedida';
+    }
+
+    function solicitudBaseNoCambia() {
+      return request.resource.data.uid_estudiante == resource.data.uid_estudiante
+        && request.resource.data.nombre_completo == resource.data.nombre_completo
+        && request.resource.data.tipo_documento == resource.data.tipo_documento
+        && request.resource.data.numero_documento == resource.data.numero_documento
+        && request.resource.data.ciudad_documento == resource.data.ciudad_documento
+        && request.resource.data.universidad == resource.data.universidad
+        && request.resource.data.carrera == resource.data.carrera
+        && request.resource.data.semestre_actual == resource.data.semestre_actual
+        && request.resource.data.horas_a_realizar == resource.data.horas_a_realizar
+        && request.resource.data.lugar_realizacion == resource.data.lugar_realizacion
+        && request.resource.data.fecha_solicitud == resource.data.fecha_solicitud
+        && request.resource.data.get('fecha_solicitud_finalizacion', null) == resource.data.get('fecha_solicitud_finalizacion', null);
+    }
+
+    function revisionInicialEdilValida() {
+      return (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'sugerencia_correccion',
+            'fecha_sugerencia_correccion',
+            'uid_edil_revision'
+          ])
+          || (
+            stringNoVacio(request.resource.data.sugerencia_correccion, 1000)
+            && request.resource.data.fecha_sugerencia_correccion == request.time
+            && request.resource.data.uid_edil_revision == request.auth.uid
+          )
+        )
+        && (
+          request.resource.data.estado != 'Rechazado'
+          || resource.data.estado == 'Rechazado'
+          || stringNoVacio(request.resource.data.sugerencia_correccion, 1000)
+        );
+    }
+
+    function revisionFinalizacionEdilValida() {
+      return (
+          !request.resource.data.diff(resource.data).affectedKeys().hasAny([
+            'finalizacion_sugerencia_correccion',
+            'fecha_sugerencia_finalizacion',
+            'uid_edil_revision_finalizacion'
+          ])
+          || (
+            stringNoVacio(request.resource.data.finalizacion_sugerencia_correccion, 1000)
+            && request.resource.data.fecha_sugerencia_finalizacion == request.time
+            && request.resource.data.uid_edil_revision_finalizacion == request.auth.uid
+          )
+        )
+        && (
+          request.resource.data.get('finalizacion_estado', null) != 'Rechazada'
+          || resource.data.get('finalizacion_estado', null) == 'Rechazada'
+          || stringNoVacio(request.resource.data.finalizacion_sugerencia_correccion, 1000)
+        );
+    }
+
+    function solicitudActualizacionEdilValida() {
+      return esEdil()
+        && request.resource.data.keys().hasOnly(camposSolicitudInicial())
+        && solicitudBaseNoCambia()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposEditablesSolicitudEdil())
+        && estadoTramiteValido(request.resource.data.estado)
+        && estadoFinalizacionValido(request.resource.data)
+        && stringOpcional(request.resource.data, 'sugerencia_correccion', 1000)
+        && stringOpcional(request.resource.data, 'finalizacion_sugerencia_correccion', 1000)
+        && timestampOpcional(request.resource.data, 'fecha_resolucion')
+        && timestampOpcional(request.resource.data, 'fecha_sugerencia_correccion')
+        && timestampOpcional(request.resource.data, 'fecha_expedicion_finalizacion')
+        && timestampOpcional(request.resource.data, 'fecha_sugerencia_finalizacion')
+        && timestampActualSiCambia('fecha_resolucion')
+        && timestampActualSiCambia('fecha_expedicion_finalizacion')
+        && revisionInicialEdilValida()
+        && revisionFinalizacionEdilValida();
+    }
+
+    function usuarioPerfilValido(data, userId) {
+      return data.keys().hasOnly(camposUsuario())
+        && data.keys().hasAll(camposBaseUsuario())
+        && data.uid == userId
+        && stringNoVacio(data.email, 180)
+        && stringNoVacio(data.nombre, 80)
+        && stringNoVacio(data.primer_apellido, 80)
+        && stringNoVacio(data.segundo_apellido, 80)
+        && tipoDocumentoValido(data.tipo_documento)
+        && stringNoVacio(data.numero_documento, 30)
+        && stringNoVacio(data.ciudad_documento, 80)
+        && rolUsuarioValido(data.rol);
+    }
+
+    function usuarioCreacionValida(data, userId) {
+      return usuarioPerfilValido(data, userId)
+        && data.creadoEn == request.time
+        && !data.keys().hasAny(['actualizadoEn', 'actualizadoPor']);
+    }
+
+    function usuarioCreadoPorEdilValido(data, userId) {
+      return esEdil()
+        && request.auth.uid != userId
+        && data.creadoPor == request.auth.uid
+        && usuarioCreacionValida(data, userId);
+    }
+
+    function usuarioActualizacionValida(data, userId) {
+      return usuarioPerfilValido(data, userId)
+        && data.get('creadoEn', null) == resource.data.get('creadoEn', null)
+        && data.get('creadoPor', null) == resource.data.get('creadoPor', null)
+        && data.actualizadoEn == request.time
+        && data.actualizadoPor == request.auth.uid
+        && (request.auth.uid != userId || data.rol == 'edil');
+    }
+
+    match /noticias/{noticiaId} {
+      allow read: if true;
+
+      allow create: if esEdil()
+        && request.resource.data.keys().hasOnly(camposCrearNoticia())
+        && request.resource.data.keys().hasAll(camposCrearNoticia())
+        && textoNoticiaValido(request.resource.data)
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.fechaPublicacion == request.time
+        && mediaNoticiaVacia(request.resource.data);
+
+      allow update: if esEdil()
+        && noticiaValida(request.resource.data)
+        && request.resource.data.autorId == resource.data.autorId
+        && request.resource.data.fechaPublicacion == resource.data.fechaPublicacion
+        && request.resource.data.fechaActualizacion == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposEditablesNoticia());
+
+      allow delete: if esEdil();
+    }
+
+    match /eventos/{eventoId} {
+      allow read: if true;
+
+      allow create: if esEdil()
+        && request.resource.data.keys().hasOnly(camposCrearEvento())
+        && request.resource.data.keys().hasAll(camposCrearEvento())
+        && eventoValido(request.resource.data)
+        && request.resource.data.autorId == request.auth.uid
+        && request.resource.data.creadoEn == request.time;
+
+      allow update: if esEdil()
+        && eventoValido(request.resource.data)
+        && request.resource.data.autorId == resource.data.autorId
+        && request.resource.data.creadoEn == resource.data.creadoEn
+        && request.resource.data.actualizadoEn == request.time
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(camposEditablesEvento());
+
+      allow delete: if esEdil();
+    }
+
+    match /info_carta_inicial/{solicitudId} {
+      allow get, list: if autenticado()
+        && (esEdil() || resource.data.uid_estudiante == request.auth.uid);
+
+      allow create: if autenticado()
+        && request.resource.data.keys().hasOnly(camposSolicitudInicial())
+        && request.resource.data.keys().hasAll(camposSolicitudInicialRequeridos())
+        && request.resource.data.uid_estudiante == request.auth.uid
+        && request.resource.data.uid_estudiante is string
+        && identidadSolicitudCoincideConPerfil(request.resource.data)
+        && request.resource.data.estado == 'Pendiente'
+        && request.resource.data.fecha_solicitud == request.time
+        && request.resource.data.fecha_resolucion == null
+        && request.resource.data.get('sugerencia_correccion', null) == null
+        && request.resource.data.get('fecha_sugerencia_correccion', null) == null
+        && request.resource.data.get('uid_edil_revision', null) == null
+        && request.resource.data.nombre_completo is string
+        && request.resource.data.tipo_documento is string
+        && request.resource.data.numero_documento is string
+        && request.resource.data.ciudad_documento is string
+        && request.resource.data.universidad is string
+        && request.resource.data.carrera is string
+        && request.resource.data.semestre_actual is int
+        && request.resource.data.semestre_actual > 0
+        && request.resource.data.horas_a_realizar is number
+        && request.resource.data.horas_a_realizar > 0
+        && request.resource.data.lugar_realizacion is string
+        && request.resource.data.documento_expedido_id == null
+        && request.resource.data.documento_expedido_url == null
+        && request.resource.data.finalizacion_solicitada == false
+        && request.resource.data.finalizacion_estado == null
+        && request.resource.data.fecha_solicitud_finalizacion == null
+        && request.resource.data.fecha_expedicion_finalizacion == null
+        && request.resource.data.get('finalizacion_sugerencia_correccion', null) == null
+        && request.resource.data.get('fecha_sugerencia_finalizacion', null) == null
+        && request.resource.data.get('uid_edil_revision_finalizacion', null) == null
+        && request.resource.data.documento_finalizacion_id == null
+        && request.resource.data.documento_finalizacion_url == null;
+
+      allow update: if solicitudActualizacionEdilValida() || puedeSolicitarFinalizacion();
+      allow delete: if esEdil();
+    }
+
+    match /info_carta_documentos/{solicitudId} {
+      allow read, write: if esEdil();
+    }
+
+    match /solicitudes_acceso/{solicitudId} {
+      allow create: if false; // Solo /api/access-requests, con CAPTCHA y cuotas.
+
+      allow get, list: if esEdil();
+      allow update: if false; // Solo servidor: reserva, aprobacion y recuperacion.
+      allow delete: if false;
+    }
+
+    match /users/{userId} {
+      allow read: if autenticado()
+        && (request.auth.uid == userId || esEdil());
+
+      // Solo un Edil crea perfiles. Se elimina el auto-registro de perfil
+      // 'estudiante' para que el acceso pase siempre por el flujo de
+      // solicitud/aprobación y no se pueda saltar creando una cuenta de Auth
+      // directamente contra la API pública (F3, OWASP A01).
+      allow create: if autenticado()
+        && usuarioCreadoPorEdilValido(request.resource.data, userId);
+
+      allow update: if false; // Todas las ediciones pasan por el diario del servidor.
+
+      allow delete: if false; // Coordinar con operaciones pendientes de Auth.
+    }
+  }
+}

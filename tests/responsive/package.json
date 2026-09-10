@@ -1,0 +1,13 @@
+{
+  "name": "jal3-responsive-tests",
+  "private": true,
+  "type": "module",
+  "description": "Verificacion responsive automatizada del frontend (Playwright). Aislado del deploy estatico de Vercel.",
+  "scripts": {
+    "check": "node check.mjs"
+  },
+  "devDependencies": {
+    "http-server": "^14.1.1",
+    "playwright": "^1.54.0"
+  }
+}

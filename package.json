@@ -1,0 +1,24 @@
+{
+  "name": "app-comuna3",
+  "private": true,
+  "scripts": {
+    "test": "node --test tests/security/*.test.cjs",
+    "test:integration": "node --test tests/integration/*.test.cjs",
+    "test:web": "node tests/web/regression.cjs",
+    "dev": "node --env-file-if-exists=.env scripts/dev.cjs"
+  },
+  "engines": {
+    "node": "24.x"
+  },
+  "dependencies": {
+    "firebase-admin": "14.3.0"
+  },
+  "devDependencies": {
+    "@firebase/rules-unit-testing": "5.0.2",
+    "firebase-tools": "15.29.0",
+    "playwright": "1.63.0"
+  },
+  "overrides": {
+    "uuid": "11.1.1"
+  }
+}

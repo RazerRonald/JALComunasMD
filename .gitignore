@@ -1,0 +1,30 @@
+# Dependencies
+node_modules/
+**/node_modules/
+
+# Local credentials and environment configuration
+.env
+.env.*
+**/.env
+**/.env.*
+!.env.example
+!**/.env.example
+
+# Generated reports and browser artifacts
+reports/
+playwright-report/
+test-results/
+
+# Local Firebase and Vercel state
+.firebase/
+.vercel/
+
+# Debug and runtime logs
+*.log
+npm-debug.log*
+
+# Operating-system and editor files
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
