@@ -1,17 +1,6 @@
 /**
  * @fileoverview app.js — Bootstrap de la aplicación y Router SPA.
  *
- * Responsabilidades:
- * 1. Inicializar la app al cargar la página.
- * 2. Observar el estado de autenticación de Firebase al arrancar.
- * 3. Gestionar el enrutamiento basado en el hash de la URL (#/).
- * 4. Validar permisos de rol antes de renderizar cada vista.
- * 5. Mantener la Navbar actualizada en cada cambio de ruta.
- * 6. Ocultar la pantalla de carga inicial.
- *
- * Para agregar una nueva ruta:
- *   → Solo añadir una entrada al objeto RUTAS (una línea de código).
- *
  * @module app
  */
 
@@ -217,3 +206,188 @@ async function cerrarSesionPorInactividad() {
     },
   });
 }
+
+
+/**
+ 
+ * @returns {Promise<void>}
+ */
+async function procesarRuta() {
+  const hash = window.location.hash || '#/inicio';
+
+  // ─── Resolver ruta exacta o con parámetro ──────────────────────────
+  let rutaKey    = hash;
+  let params     = {};
+
+  // Soporte para sub-ruta de detalle de noticia: #/noticias/:id
+  const matchNoticia = hash.match(/^#\/noticias\/(.+)$/);
+  if (matchNoticia) {
+    rutaKey         = '#/noticias/:id';
+    params.noticiaId = matchNoticia[1];
+  }
+
+  // ─── Verificar si la ruta existe ──────────────────────────────────
+  const rutaConfig = RUTAS[rutaKey] || RUTAS[hash];
+
+  if (!rutaConfig) {
+    // Ruta con parámetro: detalle de noticia
+    if (params.noticiaId) {
+      actualizarNavbar(hash);
+      mostrarApp();
+      await PublicoView.renderNoticiaDetalle(params.noticiaId);
+      return;
+    }
+    // Ruta desconocida → 404
+    actualizarNavbar(hash);
+    mostrarApp();
+    render404();
+    return;
+  }
+
+  const { handler, rolRequerido } = rutaConfig;
+  const sesion = AuthModel.getSesion();
+
+  // ─── Verificar permisos ────────────────────────────────────────────
+  if (rolRequerido) {
+    if (!sesion) {
+      // No autenticado → redirigir a login
+      if (!cierrePorInactividadEnCurso) {
+        Toast.advertencia('Debes iniciar sesión para acceder a esta sección.');
+      }
+      window.location.hash = '#/login';
+      return;
+    }
+
+    const tienePermiso = Array.isArray(rolRequerido)
+      ? rolRequerido.includes(sesion.rol)
+      : sesion.rol === rolRequerido;
+
+    if (!tienePermiso) {
+      actualizarNavbar(hash);
+      mostrarApp();
+      renderAccesoDenegado();
+      return;
+    }
+  }
+
+  // ─── Si está en login y ya está autenticado → redirigir ───────────
+  if (['#/login', '#/solicitar-acceso'].includes(hash) && sesion) {
+    window.location.hash = AuthController.getRutaPorRol(sesion.rol);
+    return;
+  }
+
+  // ─── Renderizar vista ─────────────────────────────────────────────
+  actualizarNavbar(hash);
+  mostrarApp();
+
+  try {
+    await handler();
+  } catch (err) {
+    console.error('[Router] Error al renderizar vista:', err);
+    Toast.error(i18n.app.errorGenerico);
+  }
+}
+
+// ─── NAVBAR ───────────────────────────────────────────────────────────────
+
+/**
+ * Re-renderiza la navbar con el estado de sesión actual y la ruta activa.
+ *
+ * @param {string} rutaActual - Hash actual de la URL
+ */
+function actualizarNavbar(rutaActual) {
+  const sesion = AuthModel.getSesion();
+  Navbar.render({
+    sesion,
+    rutaActual,
+    onLogout: async () => {
+      await AuthController.logout({
+        onSuccess: () => {
+          Toast.info(i18n.auth.sesionCerrada);
+          window.location.hash = '#/login';
+        },
+        onError: (msg) => Toast.error(msg),
+      });
+    },
+  });
+  DriveConnectionBubble.render({ sesion });
+}
+
+// ─── UI HELPERS ───────────────────────────────────────────────────────────
+
+/**
+ * Oculta la pantalla de carga y muestra el contenido principal.
+ */
+function mostrarApp() {
+  const loading = document.getElementById('loading-screen');
+  const root    = document.getElementById('app-root');
+  const footer  = document.getElementById('app-footer');
+
+  if (loading && !loading.classList.contains('d-none')) {
+    loading.classList.add('fade-out');
+    setTimeout(() => loading.classList.add('d-none'), 400);
+  }
+
+  root?.classList.remove('d-none');
+  footer?.classList.remove('d-none');
+}
+
+// ─── INICIALIZACIÓN ───────────────────────────────────────────────────────
+
+/**
+ * Punto de entrada principal de la aplicación.
+ * Suscribe el listener de autenticación de Firebase y configura el router.
+ */
+function iniciarApp() {
+  actualizarFooterYear();
+
+  // 1. Observar estado de autenticación (restaura sesión si ya existe)
+  const unsubAuth = AuthController.iniciarListener(async (sesion) => {
+    configurarCierrePorInactividad(sesion);
+    // Al cambiar el estado de auth → re-procesar la ruta actual
+    await procesarRuta();
+  });
+
+  // 2. Escuchar cambios de hash (navegación SPA)
+  window.addEventListener('hashchange', async () => {
+    // Destruir componentes que puedan tener suscripciones activas
+    SolicitudAccesoView.destruir();
+    try { AdminView.destruir(); }   catch (_) { /* view no montada */ }
+    try { PublicoView.destruir(); } catch (_) { /* view no montada */ }
+
+    await procesarRuta();
+  });
+
+  // 3. Si no hay hash inicial → redirigir a #/inicio
+  if (!window.location.hash || window.location.hash === '#') {
+    window.location.hash = '#/inicio';
+  }
+
+  // 4. Manejar cierre de la app (limpiar listeners)
+  window.addEventListener('beforeunload', () => {
+    unsubAuth();
+    detenerCierrePorInactividad();
+    DriveConnectionBubble.destruir();
+    try { AdminView.destruir(); }   catch (_) {}
+    try { PublicoView.destruir(); } catch (_) {}
+  });
+}
+
+// ─── ARRANQUE ─────────────────────────────────────────────────────────────
+// El listener de Firebase onAuthStateChanged es asíncrono:
+// muestra la pantalla de carga hasta que responde la primera vez.
+// Esto evita el flash de contenido no autenticado (FOUC).
+
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', iniciarApp);
+} else {
+  iniciarApp();
+}
+
+// Timeout de seguridad: si Firebase tarda >8s, mostrar la app de todas formas
+setTimeout(() => {
+  mostrarApp();
+  if (!window.location.hash || window.location.hash === '#') {
+    window.location.hash = '#/inicio';
+  }
+}, 8000);
