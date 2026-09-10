@@ -782,3 +782,594 @@ const PublicoView = {
       </div>
     `;
   },
+// ─── HELPERS DE RENDER ───────────────────────────────────────────────────
+
+  /**
+   * Renderiza las tarjetas de noticias en la sección home.
+   * @private
+   */
+  _renderNoticiasHome(noticias) {
+    const container = document.getElementById('noticias-home-container');
+    if (!container) return;
+    if (noticias.length === 0) {
+      container.innerHTML = `<div class="col-12">${this._buildEmptyState(i18n.noticias.sinNoticias, '', 'bi-newspaper')}</div>`;
+      return;
+    }
+    container.innerHTML = noticias.map((n) => this._buildNoticiaCard(n)).join('');
+    this._aplicarFondosBlur(container);
+    this._bindNoticiasClick();
+  },
+
+  /**
+   * Renderiza las tarjetas de eventos en la sección home.
+   * @private
+   */
+  _renderEventosHome(eventos) {
+    const container = document.getElementById('eventos-home-container');
+    if (!container) return;
+    if (eventos.length === 0) {
+      container.innerHTML = `<div class="col-12">${this._buildEmptyState(i18n.eventos.sinEventos, '', 'bi-calendar-x')}</div>`;
+      return;
+    }
+    container.innerHTML = eventos.map((e) => this._buildEventoCard(e)).join('');
+  },
+
+  /**
+   * Renderiza el listado publico de noticias y sus estados vacios.
+   * @private
+   */
+  _renderNoticiasListado(noticias, esBusqueda = false) {
+    const container = document.getElementById('noticias-lista');
+    if (!container) return;
+
+    if (noticias.length === 0) {
+      container.innerHTML = esBusqueda
+        ? this._buildEmptyState(i18n.noticias.sinResultados, i18n.noticias.sinResultadosSub, 'bi-search')
+        : this._buildEmptyState(i18n.noticias.sinNoticias, i18n.noticias.sinNoticiasSub, 'bi-newspaper');
+      return;
+    }
+
+    container.innerHTML = noticias.map((n) => this._buildNoticiaCard(n)).join('');
+    this._aplicarFondosBlur(container);
+    this._bindNoticiasClick();
+  },
+
+  /**
+   * Renderiza el listado publico de eventos y sus estados vacios.
+   * @private
+   */
+  _renderEventosListado(eventos, esBusqueda = false) {
+    const container = document.getElementById('eventos-lista');
+    if (!container) return;
+
+    if (eventos.length === 0) {
+      container.innerHTML = esBusqueda
+        ? this._buildEmptyState(i18n.eventos.sinResultados, i18n.eventos.sinResultadosSub, 'bi-search')
+        : this._buildEmptyState(i18n.eventos.sinEventos, i18n.eventos.sinEventosSub, 'bi-calendar-x');
+      return;
+    }
+
+    container.innerHTML = eventos.map((e) => this._buildEventoCard(e)).join('');
+  },
+
+  /**
+   * Construye una casilla de busqueda reutilizable para listados.
+   * @private
+   */
+  _buildSearchBox({ id, label, placeholder }) {
+    return `
+      <div class="content-search mb-4">
+        <label class="visually-hidden" for="${id}">${label}</label>
+        <div class="input-group">
+          <span class="input-group-text" aria-hidden="true">
+            <i class="bi bi-search"></i>
+          </span>
+          <input
+            type="search"
+            class="form-control"
+            id="${id}"
+            placeholder="${placeholder}"
+            autocomplete="off"
+          >
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Enlaza una casilla de busqueda con su renderizador.
+   * @private
+   */
+  _bindSearchInput(inputId, onSearch) {
+    const input = document.getElementById(inputId);
+    if (!input) return;
+    input.addEventListener('input', () => onSearch(input.value));
+  },
+
+  /**
+   * Filtra noticias por titulo, cuerpo o fecha.
+   * @private
+   */
+  _filtrarNoticias(noticias, termino) {
+    const q = this._normalizarBusqueda(termino);
+    if (!q) return noticias;
+
+    return noticias.filter((noticia) => this._coincideBusqueda(q, [
+      noticia.titulo,
+      noticia.cuerpo,
+      this._formatearFecha(noticia.fechaPublicacion),
+    ]));
+  },
+
+  /**
+   * Filtra eventos por titulo, lugar, descripcion o fecha.
+   * @private
+   */
+  _filtrarEventos(eventos, termino) {
+    const q = this._normalizarBusqueda(termino);
+    if (!q) return eventos;
+
+    return eventos.filter((evento) => this._coincideBusqueda(q, [
+      evento.titulo,
+      evento.lugar,
+      evento.descripcion,
+      this._formatearFecha(evento.fecha),
+      this._formatearHora(evento.fecha),
+    ]));
+  },
+
+  /**
+   * Normaliza texto para busquedas insensibles a mayusculas y acentos.
+   * @private
+   */
+  _normalizarBusqueda(valor) {
+    return String(valor ?? '')
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .toLowerCase()
+      .trim();
+  },
+
+  /**
+   * Indica si algun valor contiene el termino normalizado.
+   * @private
+   */
+  _coincideBusqueda(terminoNormalizado, valores) {
+    return valores.some((valor) => this._normalizarBusqueda(valor).includes(terminoNormalizado));
+  },
+
+  /**
+   * Construye la tarjeta HTML de una noticia.
+   * @private
+   * @param {Object} noticia
+   * @returns {string}
+   */
+  _buildNoticiaCard(noticia) {
+    const fecha = this._formatearFecha(noticia.fechaPublicacion);
+    const titulo = this._esc(noticia.titulo);
+    return `
+      <div class="col-md-6 col-lg-4 animate-fade-in-up">
+        <article class="card-noticia cursor-pointer"
+                 data-id="${this._esc(noticia.id)}"
+                 data-noticia-card
+                 role="button"
+                 tabindex="0"
+                 aria-label="Leer noticia: ${titulo}">
+          <div class="card-img-wrapper">
+            ${this._buildNoticiaMediaCard(noticia)}
+          </div>
+          <div class="card-body">
+            <p class="card-fecha">
+              <i class="bi bi-calendar3 me-1"></i>${fecha}
+            </p>
+            <h3 class="card-title">${titulo}</h3>
+            <div class="card-footer-custom">
+              <span class="text-primary fw-600" style="font-size:0.85rem;">
+                ${i18n.noticias.verDetalle} <i class="bi bi-arrow-right ms-1"></i>
+              </span>
+            </div>
+          </div>
+        </article>
+      </div>
+    `;
+  },
+
+  /**
+   * Construye el medio principal para una tarjeta de noticia.
+   * @private
+   */
+  _buildNoticiaMediaCard(noticia) {
+    const media = this._getMediaNoticia(noticia);
+    const titulo = this._esc(noticia.titulo);
+
+    if (!media.url) {
+      return `<div class="card-img-placeholder"><i class="bi bi-newspaper"></i></div>`;
+    }
+
+    return `
+      <div class="card-img-blur"
+           data-bg="${this._esc(media.url)}"
+           aria-hidden="true"></div>
+      <img src="${this._esc(media.url)}" alt="${titulo}" loading="lazy"
+           onerror="this.style.display='none';this.previousElementSibling.style.display='none';this.nextElementSibling.style.display='flex';">
+      <div class="card-img-placeholder" style="display:none;"><i class="bi bi-image"></i></div>
+      ${media.tipo === 'video' ? `
+        <span class="card-media-video-badge">
+          <i class="bi bi-play-fill" aria-hidden="true"></i> Video
+        </span>
+      ` : ''}
+    `;
+  },
+
+  /**
+   * Construye el medio principal del detalle de noticia.
+   * @private
+   */
+  _buildNoticiaMediaDetalle(noticia) {
+    const media = this._getMediaNoticia(noticia);
+    const titulo = this._esc(noticia.titulo);
+
+    if (!media.url) return '';
+
+    if (media.tipo === 'video' && media.embedUrl) {
+      return `
+        <div class="noticia-detail-video">
+          <iframe src="${this._esc(media.embedUrl)}"
+                  title="${titulo}"
+                  allow="autoplay; encrypted-media"
+                  allowfullscreen></iframe>
+        </div>
+      `;
+    }
+
+    return `
+      <figure class="noticia-detail-figure">
+        <div class="noticia-detail-blur"
+             data-bg="${this._esc(media.url)}"
+             aria-hidden="true"></div>
+        <img src="${this._esc(media.url)}"
+             alt="${titulo}"
+             class="noticia-detail-img"
+             onerror="this.closest('figure').style.display='none'" />
+      </figure>
+    `;
+  },
+
+  /**
+   * Normaliza contenido nuevo de Drive y noticias antiguas con portadaUrl.
+   * @private
+   */
+  _getMediaNoticia(noticia) {
+    const tipo = noticia.media_tipo || (noticia.portadaUrl ? 'imagen' : '');
+    const urlOriginal = noticia.media_url || noticia.portadaUrl || '';
+    const usarProxy = tipo === 'imagen'
+      && noticia.id
+      && noticia.media_drive_id
+      && !this._esServidorEstaticoLocal();
+
+    return {
+      tipo,
+      url: usarProxy ? this._buildProxyImagenNoticiaUrl(noticia) : urlOriginal,
+      embedUrl: noticia.media_embed_url || '',
+    };
+  },
+
+  /**
+   * Construye la URL del proxy CDN para imagenes de noticias.
+   * @private
+   */
+  _buildProxyImagenNoticiaUrl(noticia) {
+    const params = new URLSearchParams({ id: noticia.id });
+    if (noticia.media_drive_id) {
+      params.set('v', noticia.media_drive_id);
+    }
+    return `/api/noticias-media?${params.toString()}`;
+  },
+
+  /**
+   * Evita romper la vista cuando se prueba con un servidor estatico local.
+   * Para probar el proxy localmente, usar Vercel Dev en vez de Live Server.
+   * @private
+   */
+  _esServidorEstaticoLocal() {
+    const host = window.location.hostname;
+    const port = window.location.port;
+    return ['localhost', '127.0.0.1'].includes(host) && ['5500', '5501'].includes(port);
+  },
+
+  /**
+   * Construye la tarjeta HTML de un evento.
+   * @private
+   * @param {Object} evento
+   * @returns {string}
+   */
+  _buildEventoCard(evento) {
+    const { inicio, fin } = this._rangoEvento(evento);
+    const dia       = inicio.toLocaleDateString('es-CO', { day: '2-digit', timeZone: EVENTOS_TIME_ZONE });
+    const mes       = inicio.toLocaleDateString('es-CO', { month: 'short', timeZone: EVENTOS_TIME_ZONE }).replace('.', '');
+    const horaInicio = this._formatearHoraEvento(inicio);
+    const horaFin    = this._formatearHoraEvento(fin);
+    const horaFmt    = `${horaInicio} - ${horaFin}`;
+    const titulo    = this._esc(evento.titulo);
+    const lugar     = this._esc(evento.lugar);
+    const descripcion = this._esc(evento.descripcion || '');
+
+    return `
+      <div class="col-md-6 col-lg-3 animate-fade-in-up">
+        <article class="card-evento">
+          <div class="evento-fecha-badge" aria-label="Fecha: ${dia} de ${mes}">
+            <span class="day">${dia}</span>
+            <span class="month">${mes}</span>
+          </div>
+          <h3 class="evento-title">${titulo}</h3>
+          <p class="evento-meta">
+            <i class="bi bi-clock" aria-hidden="true"></i>
+            <span>${horaFmt}</span>
+          </p>
+          <p class="evento-meta">
+            <i class="bi bi-geo-alt" aria-hidden="true"></i>
+            <span>${lugar}</span>
+          </p>
+          ${evento.descripcion
+            ? `<p class="text-muted small mt-2 mb-0"
+                  style="display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;">
+                ${descripcion}
+              </p>`
+            : ''}
+          ${this._buildBotonCalendario(evento)}
+        </article>
+      </div>
+    `;
+  },
+
+  /**
+   * Construye el enlace para anadir el evento a Google Calendar.
+   * @private
+   */
+  _buildBotonCalendario(evento) {
+    const googleUrl = this._buildGoogleCalendarUrl(evento);
+    return `
+      <a class="evento-cal-link"
+         href="${this._esc(googleUrl)}"
+         target="_blank"
+         rel="noopener noreferrer"
+         aria-label="${i18n.eventos.anadirCalendario}">
+        <i class="bi bi-google" aria-hidden="true"></i>${i18n.eventos.anadirCalendario}
+      </a>
+    `;
+  },
+
+  /**
+   * Calcula el rango inicio/fin del evento. Si no hay fecha_fin (eventos
+   * antiguos) o es inválida, usa una duración por defecto de 2 horas.
+   * @private
+   * @returns {{ inicio: Date, fin: Date }}
+   */
+  _rangoEvento(evento) {
+    const inicio = evento.fecha?.toDate ? evento.fecha.toDate() : new Date(evento.fecha);
+    let fin = evento.fecha_fin?.toDate ? evento.fecha_fin.toDate() : (evento.fecha_fin ? new Date(evento.fecha_fin) : null);
+    if (!fin || Number.isNaN(fin.getTime()) || fin <= inicio) {
+      fin = new Date(inicio.getTime() + 2 * 60 * 60 * 1000);
+    }
+    return { inicio, fin };
+  },
+
+  /**
+   * Formatea la hora de un evento en la zona horaria de Colombia.
+   * @private
+   */
+  _formatearHoraEvento(date) {
+    return date.toLocaleTimeString('es-CO', {
+      hour:     '2-digit',
+      minute:   '2-digit',
+      timeZone: EVENTOS_TIME_ZONE,
+    });
+  },
+
+  /**
+   * Formatea una fecha para Google Calendar en la zona horaria de Colombia.
+   * @private
+   */
+  _formatFechaCalendario(date) {
+    const partes = new Intl.DateTimeFormat('en-US', {
+      timeZone: EVENTOS_TIME_ZONE,
+      year:     'numeric',
+      month:    '2-digit',
+      day:      '2-digit',
+      hour:     '2-digit',
+      minute:   '2-digit',
+      second:   '2-digit',
+      hour12:   false,
+      hourCycle: 'h23',
+    }).formatToParts(date).reduce((acc, parte) => {
+      if (parte.type !== 'literal') acc[parte.type] = parte.value;
+      return acc;
+    }, {});
+
+    return `${partes.year}${partes.month}${partes.day}T${partes.hour}${partes.minute}${partes.second}`;
+  },
+
+  /**
+   * Construye el enlace de Google Calendar con el evento prellenado.
+   * @private
+   */
+  _buildGoogleCalendarUrl(evento) {
+    const { inicio, fin } = this._rangoEvento(evento);
+    const params = new URLSearchParams({
+      action:   'TEMPLATE',
+      text:     evento.titulo || 'Evento JAL Comuna 3',
+      dates:    `${this._formatFechaCalendario(inicio)}/${this._formatFechaCalendario(fin)}`,
+      details:  evento.descripcion || '',
+      location: evento.lugar || '',
+      ctz:      EVENTOS_TIME_ZONE,
+    });
+    return `https://calendar.google.com/calendar/render?${params.toString()}`;
+  },
+
+  /**
+   * Registra los clicks en tarjetas de noticias para abrir el detalle.
+   * @private
+   */
+  _bindNoticiasClick() {
+    document.querySelectorAll('[data-noticia-card]').forEach((card) => {
+      const ir = () => {
+        window.location.hash = `#/noticias/${card.dataset.id}`;
+      };
+      card.addEventListener('click', ir);
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault();
+          ir();
+        }
+      });
+    });
+  },
+
+  /**
+   * Muestra / oculta skeleton cards como indicador de carga.
+   * @private
+   */
+  _setSkeletonNoticias(mostrar) {
+    const c = document.getElementById('noticias-home-container');
+    if (!c) return;
+    if (mostrar) c.innerHTML = this._buildSkeletonCards(3);
+  },
+
+  _setSkeletonEventos(mostrar) {
+    const c = document.getElementById('eventos-home-container');
+    if (!c) return;
+    if (mostrar) c.innerHTML = this._buildSkeletonCards(4, true);
+  },
+
+  /**
+   * Construye cards skeleton de carga.
+   * @private
+   * @param {number}  n         - Número de cards
+   * @param {boolean} [esEvento=false]
+   * @returns {string}
+   */
+  _buildSkeletonCards(n, esEvento = false) {
+    const col   = esEvento ? 'col-md-6 col-lg-3' : 'col-md-6 col-lg-4';
+    const items = Array.from({ length: n }, () => `
+      <div class="${col}">
+        <div class="card-noticia" aria-hidden="true">
+          <div class="skeleton" style="height:200px;border-radius:0;"></div>
+          <div class="card-body">
+            <div class="skeleton mb-2" style="height:0.75rem;width:40%;"></div>
+            <div class="skeleton mb-1" style="height:1rem;width:90%;"></div>
+            <div class="skeleton" style="height:1rem;width:70%;"></div>
+          </div>
+        </div>
+      </div>
+    `).join('');
+    return items;
+  },
+
+  /**
+   * Muestra un estado de error dentro de un contenedor de cards.
+   * @private
+   */
+  _renderContainerError(containerId, titulo, detalle, icono) {
+    const container = document.getElementById(containerId);
+    if (!container) return;
+    container.innerHTML = this._buildEmptyState(titulo, detalle, icono);
+  },
+
+  /**
+   * Construye el HTML de estado vacío.
+   * @private
+   */
+  _buildEmptyState(titulo, subtitulo, icono) {
+    const safeTitulo = this._esc(titulo);
+    const safeSubtitulo = this._esc(subtitulo);
+    const safeIcono = this._esc(icono);
+    return `
+      <div class="col-12">
+        <div class="empty-state">
+          <div class="empty-icon"><i class="bi ${safeIcono}"></i></div>
+          <h4>${safeTitulo}</h4>
+          ${safeSubtitulo ? `<p>${safeSubtitulo}</p>` : ''}
+        </div>
+      </div>
+    `;
+  },
+
+  /**
+   * Formatea un Timestamp de Firestore o Date a cadena legible en español.
+   * @private
+   * @param {Object|Date|null} ts
+   * @returns {string}
+   */
+  _formatearFecha(ts) {
+    if (!ts) return '—';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    return date.toLocaleDateString('es-CO', {
+      day:   '2-digit',
+      month: 'long',
+      year:  'numeric',
+    });
+  },
+
+  /**
+   * Formatea una hora para busquedas en eventos.
+   * @private
+   */
+  _formatearHora(ts) {
+    if (!ts) return '';
+    const date = ts.toDate ? ts.toDate() : new Date(ts);
+    if (Number.isNaN(date.getTime())) return '';
+    return date.toLocaleTimeString('es-CO', {
+      hour:   '2-digit',
+      minute: '2-digit',
+    });
+  },
+
+  /**
+   * Asigna las imagenes de fondo (blur) por propiedad DOM en lugar de un
+   * atributo style inline. Evita que una comilla en la URL cierre el url() de
+   * CSS tras la re-decodificacion de entidades HTML del atributo (F7).
+   * @private
+   */
+  _aplicarFondosBlur(container) {
+    if (!container) return;
+    container.querySelectorAll('[data-bg]').forEach((el) => {
+      const url = el.getAttribute('data-bg') || '';
+      el.removeAttribute('data-bg');
+      if (url) el.style.backgroundImage = `url("${this._escCssUrl(url)}")`;
+    });
+  },
+
+  /**
+   * Neutraliza una URL para usarla dentro de un string CSS entre comillas
+   * dobles asignado por propiedad DOM (sin re-decodificacion HTML).
+   * @private
+   */
+  _escCssUrl(url) {
+    return String(url ?? '')
+      .replace(/[\r\n]/g, '')
+      .replace(/[\\"]/g, '\\$&');
+  },
+
+  /**
+   * Escapa HTML para prevenir inyeccion de marcado en datos dinamicos.
+   * @private
+   */
+  _esc(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  },
+
+  /**
+   * Limpia suscripciones activas al destruir la vista.
+   * @returns {void}
+   */
+  destruir() {
+    Carousel.destruir();
+  },
+};
+
+export default PublicoView;
